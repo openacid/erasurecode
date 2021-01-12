@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT License
 // that can be found in the LICENSE file.
 
-// Package xrs implements Erasure Codes based on
+// Package erasurecode implements Erasure Codes based on
 // <A “Hitchhiker’s” Guide to Fast and Efﬁcient Data Reconstruction in Erasure-coded Data Centers>,
 // split row vectors into two equal size parts:
 // e.g. 10+4:
@@ -25,7 +25,7 @@
 // | a13| b13|
 // +---------+
 
-package xrs
+package erasurecode
 
 import (
 	"errors"
