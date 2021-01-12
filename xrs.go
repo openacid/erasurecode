@@ -99,31 +99,53 @@ func makeXORSet(d, p int, m map[int][]int) {
 
 // Encode encodes data for generating parity.
 // Write parity vectors into vects[r.DataNum:].
-func (x *XRS) Encode(vects [][]byte) (err error) {
+//
+// d₁  d₂  d₃  d₄  d₅  d₆ | y₁ y₂     y₃
+// e₁  e₂  e₃  e₄  e₅  e₆ | z₁ z₂+y₁₁ z₃+y₁₂
+//
+// z₁ = e₁ + e₂ + e₃ + e₄ + e₅ + e₆
+// z₂ = e₁ + 2e₂ + 2²e₃ + 2³e₄ + 2⁴e₅ + 2⁵e₆
+// z₃ = e₁ + 3e₂ + 3²e₃ + 3³e₄ + 3⁴e₅ + 3⁵e₆
+//
+// y₁₁ = d₁ + d₂ + d₃
+// y₁₂ = d₄ + d₅ + d₆
+//
+// y₁ = y₁₁ + y₁₂
+//
+// y₂ = d₁ + 2d₂ + 2²d₃ + 2³d₄ + 2⁴d₅ + 2⁵d₆
+// y₃ = d₁ + 3d₂ + 3²d₃ + 3³d₄ + 3⁴d₅ + 3⁵d₆
+func (x *XRS) Encode(dataAndParity [][]byte) error {
 
-	err = checkSize(vects[0])
+	err := checkSize(dataAndParity[0])
 	if err != nil {
-		return
+		return err
 	}
-	size := len(vects[0])
+	size := len(dataAndParity[0])
 
 	// Step1: Reed-Solomon encode.
-	err = x.RS.Encode(vects)
+	err = x.RS.Encode(dataAndParity)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Step2: XOR by xor_set.
 	half := size / 2
-	for bi, xs := range x.XORSet {
-		xv := make([][]byte, len(xs)+1)
-		xv[0] = vects[bi][half:]
-		for j, ai := range xs {
-			xv[j+1] = vects[ai][:half]
+	for parityIndex, dataIndexes := range x.XORSet {
+		xv := make([][]byte, len(dataIndexes)+1)
+
+		// xv[0] is set to the second half of the original ith parity.
+		xv[0] = dataAndParity[parityIndex][half:]
+
+		// xv[1:] is the first half of orignal data.
+		for i, idx := range dataIndexes {
+			xv[i+1] = dataAndParity[idx][:half]
 		}
-		xor.Encode(vects[bi][half:], xv)
+
+		// dst, []src
+		// dst = src[0] ^ src[1] ^ src[2] ...
+		xor.Encode(dataAndParity[parityIndex][half:], xv)
 	}
-	return
+	return nil
 }
 
 func checkSize(vect []byte) error {
@@ -168,16 +190,16 @@ func (x *XRS) GetNeedVects(needReconst int) (aNeed, bNeed []int, err error) {
 
 // ReconstOne reconstruct one data vector, it saves I/O.
 // Make sure you have some specific vectors data. ( you can get the vectors' indexes from GetNeedVects)
-func (x *XRS) ReconstOne(vects [][]byte, needReconst int) (err error) {
+func (x *XRS) ReconstOne(vects [][]byte, needReconst int) error {
 
-	err = checkSize(vects[0])
+	err := checkSize(vects[0])
 	if err != nil {
-		return
+		return err
 	}
 
 	aNeed, bNeed, err := x.GetNeedVects(needReconst)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Step1: Reconstruct b_needReconst & rs(bNeed[1]), using original Reed-Solomon Codes.
@@ -200,7 +222,7 @@ func (x *XRS) ReconstOne(vects [][]byte, needReconst int) (err error) {
 	bVects[bi] = bRS
 	err = x.RS.Reconst(bVects, bDPHas, []int{needReconst, bi})
 	if err != nil {
-		return
+		return err
 	}
 
 	// Step2: Reconstruct a_needReconst
@@ -213,7 +235,8 @@ func (x *XRS) ReconstOne(vects [][]byte, needReconst int) (err error) {
 		xorV[i+2] = vects[ai][:half]
 	}
 	xor.Encode(vects[needReconst][:half], xorV)
-	return
+
+	return nil
 }
 
 // Reconst reconstructs missing vectors,
@@ -231,15 +254,15 @@ func (x *XRS) ReconstOne(vects [][]byte, needReconst int) (err error) {
 // (Maybe you only need vects[0], so the needReconst should be [0], but not [0,4]).
 // the "dpHas" will be [1,2,3] ,and you must be sure that vects[1] vects[2] vects[3] have correct data,
 // results will be written into vects[0]&vects[4] directly.
-func (x *XRS) Reconst(vects [][]byte, dpHas, needReconst []int) (err error) {
+func (x *XRS) Reconst(vects [][]byte, dpHas, needReconst []int) error {
 
 	if len(needReconst) == 1 && needReconst[0] < x.RS.DataNum {
 		return x.ReconstOne(vects, needReconst[0])
 	}
 
-	err = checkSize(vects[0])
+	err := checkSize(vects[0])
 	if err != nil {
-		return
+		return err
 	}
 
 	// Step1: Reconstruct all a_vectors.
@@ -256,13 +279,13 @@ func (x *XRS) Reconst(vects [][]byte, dpHas, needReconst []int) (err error) {
 	}
 	err = x.RS.Reconst(aVects, dpHas, aLost)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Step2: Retrieve b_vectors to RS codes(if has).
 	err = x.retrieveRS(vects, dpHas)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Step3: Reconstruct b_vectors using RS codes.
@@ -272,7 +295,7 @@ func (x *XRS) Reconst(vects [][]byte, dpHas, needReconst []int) (err error) {
 	}
 	err = x.RS.Reconst(bVects, dpHas, needReconst)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Step4: XOR b_parity_vectors according to XORSet(if need).
