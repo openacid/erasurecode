@@ -1,0 +1,8 @@
+_extends: gh-config
+
+
+repository:
+  name: erasurecode
+  description: Reed-Solomon erasure code, a little bit faster than intel isl, purely in go. built upon great work of https://github.com/templexxx/xrs
+  homepage:
+  topics: go, golang, erasure-code, reed-solomon
